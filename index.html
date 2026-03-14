@@ -579,8 +579,8 @@ async function pushToCloud(){
   showSyncDot('syncing');
   const data={
     key:'edutrack',
-    students:JSON.stringify(students),
-    attendance:JSON.stringify(attendance),
+    students:JSON.stringify(allStudents),
+    attendance:JSON.stringify(allAttendance),
     homework:JSON.stringify(homework),
     notices:JSON.stringify(notices),
     events:JSON.stringify(events),
@@ -609,13 +609,21 @@ async function pullFromCloud(){
     const rows=await r.json();
     if(!rows||rows.length===0){showSyncDot('new');return false;}
     const d=rows[0];
-    students=JSON.parse(d.students)||DEFAULT_STUDENTS;
-    attendance=JSON.parse(d.attendance)||{};
+    const rawStudents=JSON.parse(d.students||'{}');
+    // Support both old format (array) and new format (object keyed by class)
+    if(Array.isArray(rawStudents)){allStudents={'6':[],'7':[],'8':[],'9':[],'10':[],'11':[],'12':rawStudents};}
+    else{allStudents=rawStudents;}
+    const rawAtt=JSON.parse(d.attendance||'{}');
+    // Support both old format and new
+    if(rawAtt&&typeof rawAtt==='object'&&!Object.keys(rawAtt).some(k=>CLASSES.includes(k)&&typeof rawAtt[k]==='object')){
+      allAttendance={'12':rawAtt};
+    }else{allAttendance=rawAtt||{};}
+    students=getStudents();attendance=getAttendance();
     homework=JSON.parse(d.homework)||[];
     notices=JSON.parse(d.notices)||DEFAULT_NOTICES;
     events=d.events?JSON.parse(d.events):events;
     nextSID=d.next_sid||8;nextHWID=d.next_hwid||4;nextNID=d.next_nid||4;nextEID=d.next_eid||nextEID;
-    lsSet('students',students);lsSet('attendance',attendance);
+    lsSet('allStudents',allStudents);lsSet('allAttendance',allAttendance);lsSet('allAttendance',allAttendance);
     lsSet('homework',homework);lsSet('notices',notices);lsSet('events',events);
     lsSet('nextSID',nextSID);lsSet('nextHWID',nextHWID);lsSet('nextNID',nextNID);lsSet('nextEID',nextEID);
     showSyncDot('ok');
@@ -639,8 +647,18 @@ function showSyncDot(state){
 }
 
 // ── Data variables (loaded from cache first, then cloud overwrites) ──
-let students=load('students',DEFAULT_STUDENTS);
-let attendance=load('attendance',{});
+// Per-class data — classes 6 to 12
+const CLASSES=['6','7','8','9','10','11','12'];
+let allStudents=load('allStudents',{'6':[],'7':[],'8':[],'9':[],'10':[],'11':[],'12':DEFAULT_STUDENTS});
+let allAttendance=load('allAttendance',{});
+// Active class selected by teacher
+let selClass=CLASSES[CLASSES.length-1]; // default Class 12
+// Shortcut getters — always point to selected class
+function getStudents(){return allStudents[selClass]||[];}
+function getAttendance(){return allAttendance[selClass]||{};}
+// Keep legacy vars pointing to active class for compatibility
+let students=getStudents();
+let attendance=getAttendance();
 let homework=load('homework',[]);
 let notices=load('notices',DEFAULT_NOTICES);
 let timetable=load('timetable',DEFAULT_TIMETABLE);
@@ -672,13 +690,7 @@ function catBorder(c){const m={general:'var(--accent)',exam:'var(--blue)',event:
 let role=null,uid=null,selRole=null;
 let selDate=TODAY();
 
-// Keep only today's attendance — wipe all other dates on load
-(function cleanOldAttendance(){
-  const today=TODAY();
-  Object.keys(attendance).forEach(d=>{if(d!==today)delete attendance[d];});
-  attendance={};  // full reset — start completely fresh
-  save('attendance',attendance);
-})();
+// Attendance managed by Supabase — no local wipe
 
 
 // ══════════════════════════════════════════
@@ -807,7 +819,7 @@ function tpage(id){
   document.getElementById(id).classList.add('on');
   document.querySelectorAll('#tnav .tab').forEach(t=>{if(t.textContent.trim()===TNAV[id])t.classList.add('on');});
   const r={td:renderTDash,ta:renderTAtt,thw:renderTHW,tn:renderTNotices,ttt:renderTTT,tst:renderTSt,tr:renderTRep,tcal:renderTCal};
-  if(r[id])pullFromCloud().then(()=>r[id]());
+  if(r[id])r[id]();
 }
 
 // ══════════════════════════════════════════
@@ -815,10 +827,11 @@ function tpage(id){
 // ══════════════════════════════════════════
 function renderTDash(){
   const t=TEACHERS.find(x=>x.id===uid);
-  const tAtt=attendance[TODAY()]||{};
+  students=getStudents();attendance=getAttendance();
+  const tAtt=(allAttendance[selClass]||{})[TODAY()]||{};
   const wds=getWeekDates().map(fmt);
   let tot=0,pres=0;
-  wds.forEach(d=>students.forEach(s=>{const v=(attendance[d]||{})[s.id];if(v){tot++;if(v==='present')pres++;}}));
+  wds.forEach(d=>students.forEach(s=>{const v=((allAttendance[selClass]||{})[d]||{})[s.id];if(v){tot++;if(v==='present')pres++;}}));
   const rate=tot>0?Math.round(pres/tot*100):null;
   const now=new Date();
 
@@ -826,9 +839,13 @@ function renderTDash(){
 
   document.getElementById('td').innerHTML=`
     <div class="sh"><div class="st">Dashboard</div><span style="font-size:.68rem;color:var(--muted);">${now.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'})}</span></div>
-    <div style="background:var(--accent-pale);border:1px solid var(--accent-l);border-radius:12px;padding:12px 15px;margin-bottom:16px;font-size:.82rem;color:var(--accent);font-weight:600;">
+    <div style="background:var(--accent-pale);border:1px solid var(--accent-l);border-radius:12px;padding:12px 15px;margin-bottom:10px;font-size:.82rem;color:var(--accent);font-weight:600;">
       Logged in as: ${t.name} · ${t.subject}
     </div>
+    <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:14px;scrollbar-width:none;">
+      ${CLASSES.map(c=>`<button onclick="selClass='${c}';students=getStudents();attendance=getAttendance();renderTDash();" style="flex-shrink:0;padding:5px 13px;border-radius:8px;border:2px solid ${'${c}'===selClass?'var(--accent)':'var(--border)'};background:${'${c}'===selClass?'var(--accent)':'var(--s1)'};color:${'${c}'===selClass?'#fff':'var(--ink)'};font-weight:700;font-size:.75rem;cursor:pointer;">Class ${c}</button>`).join('')}
+    </div>
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:.85rem;letter-spacing:1.5px;color:var(--accent);margin-bottom:12px;">CLASS ${selClass} — ${students.length} Students</div>
     <div class="sgrid">
       <div class="sc sb"><div class="sl">Students</div><div class="sv">${students.length}</div><div class="ss">enrolled</div></div>
       <div class="sc sg"><div class="sl">Present</div><div class="sv">${Object.values(tAtt).filter(v=>v==='present').length||'—'}</div><div class="ss">today</div></div>
@@ -868,7 +885,12 @@ function renderTDash(){
 // TEACHER ATTENDANCE
 // ══════════════════════════════════════════
 function renderTAtt(){
+  // Sync legacy vars
+  students=getStudents();attendance=getAttendance();
   const wds=getWeekDates();
+  const classSelector=`<div style="display:flex;gap:7px;overflow-x:auto;padding-bottom:8px;margin-bottom:14px;scrollbar-width:none;">
+    ${CLASSES.map(c=>`<button onclick="switchClass('${c}')" style="flex-shrink:0;padding:7px 16px;border-radius:9px;border:2px solid ${c===selClass?'var(--accent)':'var(--border)'};background:${c===selClass?'var(--accent)':'var(--s1)'};color:${c===selClass?'#fff':'var(--ink)'};font-weight:700;font-size:.8rem;cursor:pointer;transition:all .15s;">Class ${c}</button>`).join('')}
+  </div>`;
   const dstrip=wds.map(d=>{
     const ds=fmt(d);const fd=fmtS(d);const isT=ds===TODAY();
     return`<div class="dchip ${ds===selDate?'on':''}" onclick="selD('${ds}')">
@@ -891,6 +913,8 @@ function renderTAtt(){
 
   document.getElementById('ta').innerHTML=`
     <div class="sh"><div class="st">Mark Attendance</div></div>
+    ${classSelector}
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:.85rem;letter-spacing:1.5px;color:var(--accent);margin-bottom:10px;">CLASS ${selClass} — ${students.length} Students</div>
     <div class="dstrip">${dstrip}</div>
     <div class="card">${rows}</div>
     <div class="sstrip">
@@ -901,17 +925,28 @@ function renderTAtt(){
 
 function selD(ds){selDate=ds;renderTAtt();}
 
+function switchClass(cls){
+  selClass=cls;
+  students=getStudents();
+  attendance=getAttendance();
+  renderTAtt();
+}
+
 function markAtt(sid,status){
-  if(!attendance[selDate])attendance[selDate]={};
-  if(attendance[selDate][sid]===status)delete attendance[selDate][sid];
-  else attendance[selDate][sid]=status;
-  save('attendance',attendance);
+  if(!allAttendance[selClass])allAttendance[selClass]={};
+  if(!allAttendance[selClass][selDate])allAttendance[selClass][selDate]={};
+  if(allAttendance[selClass][selDate][sid]===status)delete allAttendance[selClass][selDate][sid];
+  else allAttendance[selClass][selDate][sid]=status;
+  attendance=getAttendance();
+  save('allAttendance',allAttendance);
+  schedulePush();
   renderTAtt();
 }
 
 function saveAtt(){
-  save('attendance',attendance);
-  toast('✅ Register saved for '+Object.keys(attendance[selDate]||{}).length+' students');
+  save('allAttendance',allAttendance);
+  schedulePush();
+  toast('✅ Register saved for Class '+selClass+' — '+Object.keys((allAttendance[selClass]||{})[selDate]||{}).length+' students');
 }
 
 // ══════════════════════════════════════════
@@ -1030,9 +1065,13 @@ function renderTTT(){
 // STUDENTS
 // ══════════════════════════════════════════
 function renderTSt(){
+  students=getStudents();
   const wds=getWeekDates().map(fmt);
+  const classSelector=CLASSES.map(c=>`<button onclick="selClass='${c}';students=getStudents();renderTSt();" style="flex-shrink:0;padding:5px 13px;border-radius:8px;border:2px solid ${'${c}'===selClass?'var(--accent)':'var(--border)'};background:${'${c}'===selClass?'var(--accent)':'var(--s1)'};color:${'${c}'===selClass?'#fff':'var(--ink)'};font-weight:700;font-size:.75rem;cursor:pointer;">Class ${c}</button>`).join('');
   document.getElementById('tst').innerHTML=`
     <div class="sh"><div class="st">Student Register</div><button class="btn ba bsm" onclick="openM('m-addst')">+ Add</button></div>
+    <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:10px;scrollbar-width:none;">${classSelector}</div>
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:.85rem;letter-spacing:1.5px;color:var(--accent);margin-bottom:10px;">CLASS ${selClass} — ${students.length} Students</div>
     <div class="card">${students.map((s,i)=>{
       let p=0,t=0;wds.forEach(d=>{const v=(attendance[d]||{})[s.id];if(v){t++;if(v==='present')p++;}});
       const r=t>0?Math.round(p/t*100):null;
@@ -1059,8 +1098,11 @@ function addStudent(){
   if(!name){toast('⚠️ Enter name');return;}
   if(!roll){toast('⚠️ Enter roll number');return;}
   const newId=nextSID++;
-  students.push({id:newId,name,roll,father,phone,email});
-  save('students',students);save('nextSID',nextSID);
+  if(!allStudents[selClass])allStudents[selClass]=[];
+  allStudents[selClass].push({id:newId,name,roll,father,phone,email});
+  students=getStudents();
+  save('allStudents',allStudents);save('nextSID',nextSID);
+  schedulePush();
   const opt=document.createElement('option');
   opt.value=newId;opt.textContent=`${CAP(name)} (Roll ${roll})`;
   document.getElementById('ssel').appendChild(opt);
@@ -1070,8 +1112,10 @@ function addStudent(){
 function remSt(sid){
   const s=students.find(x=>x.id===sid);
   if(!s||!confirm('Remove '+CAP(s.name)+'?'))return;
-  students=students.filter(x=>x.id!==sid);
-  save('students',students);
+  allStudents[selClass]=(allStudents[selClass]||[]).filter(x=>x.id!==sid);
+  students=getStudents();
+  save('allStudents',allStudents);
+  schedulePush();
   toast('Removed '+CAP(s.name));renderTSt();
 }
 
@@ -1079,13 +1123,14 @@ function remSt(sid){
 // REPORTS
 // ══════════════════════════════════════════
 function renderTRep(){
+  students=getStudents();attendance=getAttendance();
   const wds=getWeekDates();const ds=wds.map(fmt);
   const w0=wds[0],w4=wds[4];
   const lbl=`${fmtS(w0).n}–${fmtS(w4).n} ${w0.toLocaleString('default',{month:'short'})} ${w0.getFullYear()}`;
 
   const rows=students.map(s=>{
     let p=0,ab=0,late=0;
-    ds.forEach(d=>{const v=(attendance[d]||{})[s.id];if(v==='present')p++;else if(v==='absent')ab++;else if(v==='late')late++;});
+    ds.forEach(d=>{const v=((allAttendance[selClass]||{})[d]||{})[s.id];if(v==='present')p++;else if(v==='absent')ab++;else if(v==='late')late++;});
     const t=p+ab+late;const r=t>0?Math.round(p/t*100):null;
     const bc=r===null?'bgm':r>=80?'bgg':r>=60?'bga':'bgr';
     return`<tr>
@@ -1099,7 +1144,7 @@ function renderTRep(){
   }).join('');
 
   const bars=students.map((s,i)=>{
-    let p=0,t=0;ds.forEach(d=>{const v=(attendance[d]||{})[s.id];if(v){t++;if(v==='present')p++;}});
+    let p=0,t=0;ds.forEach(d=>{const v=((allAttendance[selClass]||{})[d]||{})[s.id];if(v){t++;if(v==='present')p++;}});
     const r=t>0?Math.round(p/t*100):0;
     const fc=r>=80?'pfg':r>=60?'pfa':'pfr';
     return`<div style="margin-bottom:11px;">
@@ -1153,7 +1198,7 @@ function spage(id){
   document.getElementById(id).classList.add('on');
   document.querySelectorAll('#snav .tab').forEach(t=>{if(t.textContent.trim()===SNAV[id])t.classList.add('on');});
   const r={sd:renderSDash,sa:renderSAtt,shw:renderSHW,sn:renderSNotices,stt:renderSTT,scal:renderSCal};
-  if(r[id])pullFromCloud().then(()=>r[id]());
+  if(r[id])r[id]();
 }
 
 // ══════════════════════════════════════════
@@ -1165,7 +1210,8 @@ function renderSDash(){
   const wds=getWeekDates().map(fmt);
   let p=0,ab=0,late=0;
   wds.forEach(d=>{const v=(attendance[d]||{})[s.id];if(v==='present')p++;else if(v==='absent')ab++;else if(v==='late')late++;});
-  const todayStatus=(attendance[TODAY()]||{})[s.id];
+  let sCls='12';CLASSES.forEach(c=>{if((allStudents[c]||[]).find(x=>x.id===s.id))sCls=c;});
+  const todayStatus=((allAttendance[sCls]||{})[TODAY()]||{})[s.id];
 
   document.getElementById('sd').innerHTML=`
     <div class="sh"><div class="st">Hello, ${CAP(s.name)} 👋</div></div>
@@ -1217,7 +1263,7 @@ function renderSAtt(){
     </div>
     <div class="sh"><div class="st">This Week</div></div>
     <div class="card">${wds.map((d,i)=>{
-      const v=(attendance[fmt(d)]||{})[s.id];
+      const v=(sAtt[fmt(d)]||{})[s.id];
       const icon=v==='present'?'✅':v==='absent'?'❌':v==='late'?'⏰':'—';
       const col=v==='present'?'var(--accent)':v==='absent'?'var(--red)':v==='late'?'var(--amber)':'var(--muted)';
       const isT=fmt(d)===TODAY();
@@ -1595,8 +1641,10 @@ function saveTeachers(){
 
 function saveStudents(){
   if(!pendingStudents)return;
-  students=pendingStudents;
-  nextSID=students.length+1;
+  if(!allStudents[selClass])allStudents[selClass]=[];
+  allStudents[selClass]=pendingStudents;
+  students=getStudents();
+  nextSID=pendingStudents.length+1;
   // Rebuild student dropdown
   const sel=document.getElementById('ssel');
   sel.innerHTML='<option value="">— Choose name —</option>';
@@ -1605,7 +1653,7 @@ function saveStudents(){
     o.value=s.id;o.textContent=CAP(s.name)+' (Roll '+s.roll+')';
     sel.appendChild(o);
   });
-  save('students',students);
+  save('allStudents',allStudents);
   save('nextSID',nextSID);
   schedulePush();
   toast('✅ '+students.length+' students saved!');
