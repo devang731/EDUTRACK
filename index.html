@@ -598,7 +598,7 @@ function getAtt(){return allAttendance[selClass]||{};}
 function getWeekDates(){
   const t=new Date(),day=t.getDay(),mon=new Date(t);
   mon.setDate(t.getDate()-(day===0?6:day-1));
-  return Array.from({length:5},(_,i)=>{const d=new Date(mon);d.setDate(mon.getDate()+i);return d;});
+  return Array.from({length:6},(_,i)=>{const d=new Date(mon);d.setDate(mon.getDate()+i);return d;});
 }
 function fmtS(d){return{n:d.getDate(),wd:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()]};}
 function fmtNice(ds){if(!ds)return'—';const d=new Date(ds+'T00:00:00');return d.toLocaleDateString('en-IN',{day:'numeric',month:'short'});}
@@ -1233,7 +1233,7 @@ function renderTT(elId,teacherName){
       <div style="text-align:center;font-size:.72rem;color:var(--muted);">Admin can upload timetable from the Admin panel</div>
     </div></div>`;
   }
-  const days=['Monday','Tuesday','Wednesday','Thursday','Friday'];
+  const days=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const todayName=days[new Date().getDay()-1]||'';
   return timetable.map(day=>`
     <div style="margin-bottom:14px;">
@@ -1428,7 +1428,7 @@ function _renderSAttNow(){
   ds.forEach(d=>{const v=(sAtt[d]||{})[s.id];if(v==='present')p++;else if(v==='absent')ab++;else if(v==='late')late++;});
   const tot=p+ab+late;const rate=tot>0?Math.round(p/tot*100):null;
   const rcolor=rate===null?'var(--muted)':rate>=80?'var(--accent)':rate>=60?'var(--amber)':'var(--red)';
-  const days=['Monday','Tuesday','Wednesday','Thursday','Friday'];
+  const days=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
   document.getElementById('sa').innerHTML=`
     <div class="sh"><div class="st">My Attendance</div><span class="badge bgb">Class ${cls}</span></div>
