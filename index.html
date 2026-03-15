@@ -648,7 +648,14 @@ async function pullCloud(){
       try{const t=JSON.parse(d.teachers);if(Array.isArray(t)&&t.length&&t[0].name){TEACHERS=t;lsSet('teachers',TEACHERS);}}catch{}
     }
     if(d.students){
-      try{const s=JSON.parse(d.students);if(s&&typeof s==='object'&&!Array.isArray(s)){allStudents={...DEFAULT_STUDENTS,...s};lsSet('allStudents',allStudents);}}catch{}
+      try{
+        const s=JSON.parse(d.students);
+        if(s&&typeof s==='object'&&!Array.isArray(s)){
+          CLASSES.forEach(cls=>{if(s[cls]&&s[cls].length>0)allStudents[cls]=s[cls];});
+          lsSet('allStudents',allStudents);
+          rebuildStudentDropdown();
+        }
+      }catch{}
     }
     if(d.attendance){
       try{
@@ -1272,8 +1279,10 @@ function renderSTT(){
 // STUDENTS
 // ═══════════════════════════════════════
 function renderTSt(){
-  const sts=getStudents();
-  const wds=getWeekDates().map(d=>FMT(d));
+  // Pull fresh data so newly uploaded students appear immediately
+  const _render=()=>{
+    const sts=getStudents();
+    const wds=getWeekDates().map(d=>FMT(d));
   document.getElementById('tst').innerHTML=`
     <div class="sh"><div class="st">Students</div><button class="btn ba bsm" onclick="showPopup('m-addst')">+ Add</button></div>
     ${classStrip("document.querySelectorAll('#tst .clasbtn').forEach(b=>b.classList.remove('on'));this.classList.add('on');renderTSt();")}
@@ -1290,7 +1299,10 @@ function renderTSt(){
         <span class="badge ${r===null?'bgm':r>=80?'bgg':r>=60?'bga':'bgr'}">${r!==null?r+'%':'—'}</span>
         <button class="btn bred bsm" style="margin-left:6px;" onclick="remSt(${s.id})">✕</button>
       </div>`;
-    }).join('')||'<div class="crow" style="justify-content:center;color:var(--muted);">No students</div>'}</div>`;
+    }).join('')||'<div class="crow" style="justify-content:center;color:var(--muted);">No students in Class '+selClass+'</div>'}</div>`;
+  };
+  const wasPulled=_pulled;_pulled=false;
+  pullCloud().then(()=>{_pulled=wasPulled;_render();}).catch(()=>_render());
 }
 
 function addStudent(){
@@ -1300,7 +1312,10 @@ function addStudent(){
   const phone=document.getElementById('ns-p').value.trim()||'—';
   if(!name){toast('⚠️ Enter name');return;}
   if(!roll){toast('⚠️ Enter roll number');return;}
-  const id=nextSID++;
+  const classOffset=parseInt(selClass)*1000;
+  const existingIds=(allStudents[selClass]||[]).map(s=>s.id);
+  let id=classOffset+1;
+  while(existingIds.includes(id))id++;
   if(!allStudents[selClass])allStudents[selClass]=[];
   allStudents[selClass].push({id,name,roll,father,phone});
   save('allStudents',allStudents);save('nextSID',nextSID);
@@ -1529,13 +1544,14 @@ function handleStudentUpload(input){
       const wb=XLSX.read(e.target.result,{type:'array'});
       const ws=wb.Sheets[wb.SheetNames[0]];
       const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+      const classOffset=parseInt(selClass)*1000;
       const mapped=rows.map((r,i)=>{
         const name=(r.Name||r.name||r.NAME||'').toString().trim();
         const roll=parseInt(r.Roll||r.roll||r.ROLL||i+1);
         const father=(r.Father||r.father||'—').toString().trim();
         const phone=(r.Phone||r.phone||'—').toString().trim();
         if(!name)return null;
-        return{id:i+1,name,roll,father,phone};
+        return{id:classOffset+i+1,name,roll,father,phone};
       }).filter(Boolean);
       if(!mapped.length){toast('⚠️ No valid rows. Check columns: Name, Roll, Father, Phone');return;}
       pendingStudents=mapped;
@@ -1550,10 +1566,14 @@ function handleStudentUpload(input){
 
 function saveStudents(){
   if(!pendingStudents)return;
-  allStudents[selClass]=pendingStudents;
-  nextSID=pendingStudents.length+1;
+  // Give each student a unique ID using class+index to avoid conflicts across classes
+  const classOffset=parseInt(selClass)*1000;
+  allStudents[selClass]=pendingStudents.map((s,i)=>({...s,id:classOffset+i+1}));
+  nextSID=classOffset+pendingStudents.length+2;
   save('allStudents',allStudents);save('nextSID',nextSID);
   rebuildStudentDropdown();
+  pushCloud(); // immediately sync to cloud
+  _pulled=false; // force re-pull next time teacher views
   toast('✅ Class '+selClass+' — '+pendingStudents.length+' students saved!');
   document.getElementById('s-save').style.display='none';
   document.getElementById('s-preview').innerHTML='';
