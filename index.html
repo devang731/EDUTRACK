@@ -747,18 +747,18 @@ async function pullCloud(){
     if(d.attendance){
       try{
         const cloudAtt=JSON.parse(d.attendance)||{};
-        // ALWAYS MERGE — never overwrite local with cloud
-        // Local data wins when there's a conflict (more marks = more complete)
+        // Merge cloud into local — local ALWAYS wins (never overwrite)
         CLASSES.forEach(cls=>{
           if(!allAttendance[cls])allAttendance[cls]={};
-          // Add cloud dates that don't exist locally
           Object.keys(cloudAtt[cls]||{}).forEach(date=>{
             const loc=allAttendance[cls][date]||{};
             const cld=cloudAtt[cls][date]||{};
-            // Merge both — local marks override cloud for same student
-            allAttendance[cls][date]={...cld,...loc};
+            // Only use cloud data if we have NOTHING locally for that date
+            if(Object.keys(loc).length===0&&Object.keys(cld).length>0){
+              allAttendance[cls][date]=cld;
+            }
+            // Otherwise keep local data as-is
           });
-          // Keep any local dates not in cloud (recently marked, not yet synced)
         });
         lsSet('allAttendance',allAttendance);
       }catch{}
@@ -1570,8 +1570,7 @@ function renderTSt(){
       </div>`;
     }).join('')||'<div class="crow" style="justify-content:center;color:var(--muted);">No students in Class '+selClass+'</div>'}</div>`;
   };
-  const wasPulled=_pulled;_pulled=false;
-  pullCloud().then(()=>{_pulled=wasPulled;_render();}).catch(()=>_render());
+  _render();
 }
 
 function addStudent(){
@@ -1773,13 +1772,8 @@ function renderSDash(){
 // ═══════════════════════════════════════
 function renderSAtt(){
   // Always pull fresh data before showing attendance
-  document.getElementById('sa').innerHTML='<div style="text-align:center;padding:40px;color:var(--muted);">⟳ Loading attendance...</div>';
-  // Reset pull flag so we get fresh data
-  const wasPulled=_pulled;_pulled=false;
-  pullCloud().then(()=>{
-    _pulled=wasPulled;
-    _renderSAttNow();
-  }).catch(()=>_renderSAttNow());
+  // Just render from local data — no cloud pull to avoid overwriting
+  _renderSAttNow();
 }
 function _renderSAttNow(){
   const{s,cls}=getStudentData();
@@ -1923,7 +1917,7 @@ function saveStudents(){
   save('allStudents',allStudents);save('nextSID',nextSID);
   rebuildStudentDropdown();
   pushCloud(); // immediately sync to cloud
-  _pulled=false; // force re-pull next time teacher views
+  // Students saved — rebuild dropdowns
   toast('✅ Class '+selClass+' — '+pendingStudents.length+' students saved!');
   document.getElementById('s-save').style.display='none';
   document.getElementById('s-preview').innerHTML='';
