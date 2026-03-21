@@ -548,6 +548,25 @@ textarea.fi{resize:vertical;min-height:68px;}
   </div>
 </div>
 
+<!-- CLASS SELECTOR POPUP (shown after teacher login) -->
+<div class="overlay" id="class-select-pop">
+  <div class="popup" style="text-align:center;">
+    <div style="font-size:2rem;margin-bottom:8px;">🏫</div>
+    <div class="popup-title">Select Class</div>
+    <div id="class-select-name" style="font-size:.78rem;color:var(--muted);margin-bottom:16px;"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:6px;">
+      <button class="btn bg" style="padding:14px;font-size:.9rem;font-weight:700;" onclick="selectClassAndGo('6')">Class 6</button>
+      <button class="btn bg" style="padding:14px;font-size:.9rem;font-weight:700;" onclick="selectClassAndGo('7')">Class 7</button>
+      <button class="btn bg" style="padding:14px;font-size:.9rem;font-weight:700;" onclick="selectClassAndGo('8')">Class 8</button>
+      <button class="btn bg" style="padding:14px;font-size:.9rem;font-weight:700;" onclick="selectClassAndGo('9')">Class 9</button>
+      <button class="btn bg" style="padding:14px;font-size:.9rem;font-weight:700;" onclick="selectClassAndGo('10')">Class 10</button>
+      <button class="btn bg" style="padding:14px;font-size:.9rem;font-weight:700;" onclick="selectClassAndGo('11')">Class 11</button>
+      <button class="btn bg" style="padding:14px;font-size:.9rem;font-weight:700;" onclick="selectClassAndGo('12')">Class 12</button>
+      <button class="btn ba" style="padding:14px;font-size:.75rem;grid-column:span 2;" onclick="closePopup('class-select-pop')">Skip — Show All</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -891,7 +910,13 @@ function teacherLogin(){
   document.getElementById('t-hdr').textContent=t.name;
   document.getElementById('t-dot').textContent=t.name.substring(0,2).toUpperCase();
   switchTo('sc-teacher');
-  pullCloud().then(()=>{renderTDash();toast('✅ Welcome, '+t.name+'!');});
+  pullCloud().then(()=>{
+    // Show class selector popup after login
+    document.getElementById('class-select-name').textContent=t.name+' — '+t.subject;
+    showPopup('class-select-pop');
+    renderTDash();
+    toast('✅ Welcome, '+t.name+'!');
+  });
 }
 
 function studentLogin(){
@@ -944,6 +969,13 @@ function logout(){
 // ═══════════════════════════════════════
 // SCREEN SWITCHING
 // ═══════════════════════════════════════
+function selectClassAndGo(cls){
+  selClass=cls;
+  closePopup('class-select-pop');
+  // Refresh all class strips to highlight selected class
+  renderTDash();
+}
+
 function switchTo(id){
   document.querySelectorAll('.screen').forEach(s=>{s.classList.remove('active');s.style.display='none';});
   const el=document.getElementById(id);
