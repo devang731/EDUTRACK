@@ -219,7 +219,7 @@ textarea.fi{resize:vertical;min-height:68px;}
   <header>
     <div class="hlogo">Edu<b>Track</b></div>
     <div class="hright">
-      
+      <button class="btn bg bsm" onclick="showClassSwitcher()" style="font-size:.65rem;padding:5px 9px;">🏫 Class <span id="cur-class-lbl">12</span></button>
       <div class="upill"><div class="udot dt" id="t-dot">T</div><span id="t-hdr">Teacher</span></div>
       <button class="lout" onclick="showPopup('side-menu')" title="Menu">☰</button>
     </div>
@@ -911,6 +911,9 @@ function teacherLogin(){
   document.getElementById('t-dot').textContent=t.name.substring(0,2).toUpperCase();
   switchTo('sc-teacher');
   pullCloud().then(()=>{
+    // Update header class label
+    const lbl=document.getElementById('cur-class-lbl');
+    if(lbl)lbl.textContent=selClass;
     // Show class selector popup after login
     document.getElementById('class-select-name').textContent=t.name+' — '+t.subject;
     showPopup('class-select-pop');
@@ -971,9 +974,18 @@ function logout(){
 // ═══════════════════════════════════════
 function selectClassAndGo(cls){
   selClass=cls;
+  // Update header label
+  const lbl=document.getElementById('cur-class-lbl');
+  if(lbl)lbl.textContent=cls;
   closePopup('class-select-pop');
-  // Refresh all class strips to highlight selected class
   renderTDash();
+  tpage('td');
+}
+
+function showClassSwitcher(){
+  const t=TEACHERS.find(x=>x.id===uid)||{name:'Teacher',subject:''};
+  document.getElementById('class-select-name').textContent=t.name+' — tap a class to switch';
+  showPopup('class-select-pop');
 }
 
 function switchTo(id){
@@ -1020,7 +1032,11 @@ function spage(id){
 // CLASS STRIP HELPER
 // ═══════════════════════════════════════
 function classStrip(onSwitch){
-  return`<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:12px;scrollbar-width:none;">${CLASSES.map(c=>`<button class="clasbtn ${c===selClass?'on':''}" onclick="selClass='${c}';${onSwitch}">${c}</button>`).join('')}</div>`;
+  // No switching allowed — class locked at login
+  return`<div style="display:inline-flex;align-items:center;gap:8px;background:var(--accent-p);border:1px solid var(--accent-l);border-radius:8px;padding:6px 12px;margin-bottom:12px;">
+    <span style="font-size:.68rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Current Class</span>
+    <span style="font-family:'Bebas Neue',sans-serif;font-size:1rem;letter-spacing:1.5px;color:var(--accent);">Class ${selClass}</span>
+  </div>`;
 }
 
 // ═══════════════════════════════════════
