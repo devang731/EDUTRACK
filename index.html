@@ -601,6 +601,39 @@ let allStudents=load('allStudents',DEFAULT_STUDENTS);
 let allAttendance=load('allAttendance',{});
 let homework=load('homework',[]);
 let notices=load('notices',[]);
+// Indian National & Haryana Holidays 2026 — auto-shown on calendar
+const INDIAN_HOLIDAYS=[
+  {id:'ih1',title:'New Year',date:'2026-01-01',cat:'holiday'},
+  {id:'ih2',title:'Makar Sankranti',date:'2026-01-14',cat:'holiday'},
+  {id:'ih3',title:'Republic Day',date:'2026-01-26',cat:'holiday'},
+  {id:'ih4',title:'Basant Panchami',date:'2026-02-02',cat:'holiday'},
+  {id:'ih5',title:'Maha Shivratri',date:'2026-02-17',cat:'holiday'},
+  {id:'ih6',title:'Holika Dahan',date:'2026-03-02',cat:'holiday'},
+  {id:'ih7',title:'Holi',date:'2026-03-03',cat:'holiday'},
+  {id:'ih8',title:'Eid ul-Fitr',date:'2026-03-31',cat:'holiday'},
+  {id:'ih9',title:'Good Friday',date:'2026-04-03',cat:'holiday'},
+  {id:'ih10',title:'Mahavir Jayanti',date:'2026-04-06',cat:'holiday'},
+  {id:'ih11',title:'Baisakhi',date:'2026-04-13',cat:'holiday'},
+  {id:'ih12',title:'Ambedkar Jayanti',date:'2026-04-14',cat:'holiday'},
+  {id:'ih13',title:'Buddha Purnima',date:'2026-05-01',cat:'holiday'},
+  {id:'ih14',title:'Eid ul-Adha',date:'2026-06-17',cat:'holiday'},
+  {id:'ih15',title:'Muharram',date:'2026-07-17',cat:'holiday'},
+  {id:'ih16',title:'Independence Day',date:'2026-08-15',cat:'holiday'},
+  {id:'ih17',title:'Janmashtami',date:'2026-08-24',cat:'holiday'},
+  {id:'ih18',title:'Milad-un-Nabi',date:'2026-09-16',cat:'holiday'},
+  {id:'ih19',title:'Gandhi Jayanti',date:'2026-10-02',cat:'holiday'},
+  {id:'ih20',title:'Dussehra',date:'2026-10-11',cat:'holiday'},
+  {id:'ih21',title:'Dhanteras',date:'2026-10-26',cat:'holiday'},
+  {id:'ih22',title:'Diwali',date:'2026-10-28',cat:'holiday'},
+  {id:'ih23',title:'Bhai Dooj',date:'2026-10-30',cat:'holiday'},
+  {id:'ih24',title:'Haryana Day',date:'2026-11-01',cat:'holiday'},
+  {id:'ih25',title:'Guru Nanak Jayanti',date:'2026-11-14',cat:'holiday'},
+  {id:'ih26',title:'Christmas',date:'2026-12-25',cat:'holiday'},
+];
+function getAllEvents(){
+  const userIds=new Set(events.map(e=>String(e.id)));
+  return [...events,...INDIAN_HOLIDAYS.filter(h=>!userIds.has(h.id))];
+}
 let events=load('events',[]);
 let timetable=load('timetable',[]);
 let nextSID=load('nextSID',8);
@@ -1196,7 +1229,7 @@ function delNotice(id){notices=notices.filter(n=>n.id!==id);save('notices',notic
 // ═══════════════════════════════════════
 function calItems(){
   const items=[];
-  events.forEach(e=>items.push({...e,src:'event'}));
+  getAllEvents().forEach(e=>items.push({...e,src:'event'}));
   notices.forEach(n=>{if(n.date)items.push({id:'n'+n.id,title:n.title,date:n.date,cat:n.cat,src:'notice'});});
   homework.forEach(h=>{if(h.due)items.push({id:'hw'+h.id,title:h.subject+': '+h.desc.substring(0,25)+'…',date:h.due,cat:'exam',src:'hw'});});
   return items.sort((a,b)=>a.date.localeCompare(b.date));
@@ -1210,7 +1243,7 @@ function getDayAttColor(ds, canEdit){
   const dayAtt = (allAttendance[cls]||{})[ds]||{};
   const sts = canEdit ? getStudents() : (allStudents[cls]||[]);
   if(!sts.length) return null;
-  const holiday = events.find(e=>e.date===ds&&e.cat==='holiday');
+  const holiday = getAllEvents().find(e=>e.date===ds&&e.cat==='holiday');
   if(holiday) return 'var(--purple-p)';
   const marked = Object.keys(dayAtt).length;
   if(!marked) return null;
@@ -1346,7 +1379,7 @@ function renderCal(elId,canEdit){
     const its=dayMap[d]||[];
     const attColor=getDayAttColor(ds,canEdit);
     const hasTodo=(todos[ds]||[]).length>0;
-    const holiday=events.find(e=>e.date===ds&&e.cat==='holiday');
+    const holiday=getAllEvents().find(e=>e.date===ds&&e.cat==='holiday');
     const hasHW=items.find(it=>it.date===ds&&it.src==='hw');
     const hasExam=items.find(it=>it.date===ds&&it.cat==='exam');
 
@@ -1381,7 +1414,7 @@ function renderCal(elId,canEdit){
         <span style="font-size:.66rem;color:var(--muted);">${fmtNice(it.date)}</span>
       </div>
       <div class="ntitle">${it.title}</div>
-      ${canEdit&&it.src==='event'?`<button class="btn bred bsm" style="margin-top:5px;" onclick="delEvent(${it.id})">🗑 Delete</button>`:''}
+      ${canEdit&&it.src==='event'&&!String(it.id).startsWith('ih')?`<button class="btn bred bsm" style="margin-top:5px;" onclick="delEvent(${it.id})">🗑 Delete</button>`:''}
     </div>`).join(''):'<div class="card"><div class="crow" style="justify-content:center;color:var(--muted);">No upcoming events</div></div>';
 
   el.innerHTML=`
