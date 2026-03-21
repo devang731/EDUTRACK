@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -632,7 +631,13 @@ async function pushCloud(){
       await fetch(SB_URL+'/rest/v1/appdata',{method:'POST',headers:{...SB_H,'Prefer':'return=minimal'},body:JSON.stringify(data)});
     }
     syncDot('saved');
-  }catch(e){syncDot('error');}
+  }catch(e){
+    syncDot('error');
+    // Save locally so data is never lost
+    lsSet('allAttendance',allAttendance);
+    // Retry after 5 seconds
+    setTimeout(pushCloud,5000);
+  }
 }
 
 let _pulled=false; // only pull once per session
@@ -661,21 +666,18 @@ async function pullCloud(){
     if(d.attendance){
       try{
         const cloudAtt=JSON.parse(d.attendance)||{};
-        // Merge cloud + local — local marks for TODAY always win
-        const today=TODAY();
-        Object.keys(cloudAtt).forEach(cls=>{
+        // ALWAYS MERGE — never overwrite local with cloud
+        // Local data wins when there's a conflict (more marks = more complete)
+        CLASSES.forEach(cls=>{
           if(!allAttendance[cls])allAttendance[cls]={};
+          // Add cloud dates that don't exist locally
           Object.keys(cloudAtt[cls]||{}).forEach(date=>{
-            if(date===today){
-              // Today: keep whichever has more marks
-              const loc=allAttendance[cls][date]||{};
-              const cld=cloudAtt[cls][date]||{};
-              allAttendance[cls][date]=Object.keys(loc).length>=Object.keys(cld).length?loc:{...cld,...loc};
-            } else {
-              // Past dates: use cloud data
-              allAttendance[cls][date]=cloudAtt[cls][date];
-            }
+            const loc=allAttendance[cls][date]||{};
+            const cld=cloudAtt[cls][date]||{};
+            // Merge both — local marks override cloud for same student
+            allAttendance[cls][date]={...cld,...loc};
           });
+          // Keep any local dates not in cloud (recently marked, not yet synced)
         });
         lsSet('allAttendance',allAttendance);
       }catch{}
@@ -1338,21 +1340,52 @@ function remSt(sid){
 // ═══════════════════════════════════════
 // REPORTS
 // ═══════════════════════════════════════
+// Track selected month/year for reports
+let repMonth=new Date().getMonth(), repYear=new Date().getFullYear();
+
 function renderTRep(){
   const sts=getStudents();
   const wds=getWeekDates();const ds=wds.map(d=>FMT(d));
+  const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  // Get all days in selected month that have attendance data for this class
+  const clsAtt=allAttendance[selClass]||{};
+  const monthDays=Object.keys(clsAtt).filter(d=>{
+    const dt=new Date(d+'T00:00:00');
+    return dt.getFullYear()===repYear&&dt.getMonth()===repMonth;
+  }).sort();
+
   document.getElementById('tr').innerHTML=`
     <div class="sh"><div class="st">Reports</div><button class="btn bg bsm" onclick="window.print()">🖨 Print</button></div>
     ${classStrip("document.querySelectorAll('#tr .clasbtn').forEach(b=>b.classList.remove('on'));this.classList.add('on');renderTRep();")}
-    <div style="font-family:'Bebas Neue',sans-serif;font-size:.82rem;letter-spacing:1.5px;color:var(--accent);margin-bottom:10px;">CLASS ${selClass}</div>
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:.82rem;letter-spacing:1.5px;color:var(--accent);margin-bottom:12px;">CLASS ${selClass}</div>
+
+    <!-- MONTHLY EXPORT SECTION -->
+    <div class="card" style="padding:14px;margin-bottom:12px;">
+      <div style="font-weight:700;font-size:.88rem;margin-bottom:12px;">📊 Monthly Attendance Export</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+        <button class="btn bg bsm" onclick="repMonth===0?(repMonth=11,repYear--):(repMonth--);renderTRep()">← Prev</button>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:1rem;letter-spacing:1.5px;flex:1;text-align:center;">${months[repMonth]} ${repYear}</div>
+        <button class="btn bg bsm" onclick="repMonth===11?(repMonth=0,repYear++):(repMonth++);renderTRep()">Next →</button>
+      </div>
+      ${monthDays.length===0
+        ?`<div style="text-align:center;color:var(--muted);font-size:.82rem;padding:10px;">No attendance data for ${months[repMonth]} ${repYear}</div>`
+        :`<div style="font-size:.75rem;color:var(--muted);margin-bottom:10px;">${monthDays.length} days recorded · ${sts.length} students</div>`
+      }
+      <button class="btn ba bfull" onclick="exportMonthlyExcel()" ${monthDays.length===0?'disabled':''} style="display:flex;align-items:center;justify-content:center;gap:6px;">
+        📥 Download ${months[repMonth]} ${repYear} Attendance Excel
+      </button>
+    </div>
+
+    <!-- WEEKLY SUMMARY -->
     <div class="card" style="overflow:hidden;margin-bottom:12px;">
-      <div style="padding:10px 13px;border-bottom:1px solid var(--border);font-weight:700;font-size:.86rem;">Weekly Attendance Summary</div>
+      <div style="padding:10px 13px;border-bottom:1px solid var(--border);font-weight:700;font-size:.86rem;">This Week's Summary</div>
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:.78rem;">
           <thead><tr>${['Student','P','A','L','Rate'].map(h=>`<th style="padding:7px 10px;text-align:left;font-size:.61rem;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);border-bottom:2px solid var(--border);font-weight:700;">${h}</th>`).join('')}</tr></thead>
           <tbody>${sts.map(s=>{
             let p=0,ab=0,late=0;
-            ds.forEach(d=>{const v=((allAttendance[selClass]||{})[d]||{})[s.id];if(v==='present')p++;else if(v==='absent')ab++;else if(v==='late')late++;});
+            ds.forEach(d=>{const v=(clsAtt[d]||{})[s.id];if(v==='present')p++;else if(v==='absent')ab++;else if(v==='late')late++;});
             const t2=p+ab+late;const r=t2>0?Math.round(p/t2*100):null;
             return`<tr><td style="padding:8px 10px;border-bottom:1px solid var(--border);font-weight:600;">${CAP(s.name)}</td>
               <td style="padding:8px 10px;border-bottom:1px solid var(--border);"><span class="badge bgg">${p}</span></td>
@@ -1364,6 +1397,8 @@ function renderTRep(){
         </table>
       </div>
     </div>
+
+    <!-- PARENT CONTACTS -->
     <div class="card" style="padding:14px;">
       <div style="font-weight:700;font-size:.86rem;margin-bottom:12px;">📞 Parent Contacts</div>
       ${sts.map((s,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);">
@@ -1372,6 +1407,54 @@ function renderTRep(){
         <a href="tel:${s.phone}" class="btn bg bsm">📞 ${s.phone||'—'}</a>
       </div>`).join('')||'<div style="text-align:center;color:var(--muted);padding:10px;">No students</div>'}
     </div>`;
+}
+
+function exportMonthlyExcel(){
+  const sts=getStudents();
+  const clsAtt=allAttendance[selClass]||{};
+  const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  // Get all days in selected month with data
+  const monthDays=Object.keys(clsAtt).filter(d=>{
+    const dt=new Date(d+'T00:00:00');
+    return dt.getFullYear()===repYear&&dt.getMonth()===repMonth;
+  }).sort();
+
+  if(!monthDays.length){toast('⚠️ No data for this month');return;}
+
+  // Build header row: Student | Roll | Day1 | Day2 | ... | P | A | L | %
+  const dayHeaders=monthDays.map(d=>{
+    const dt=new Date(d+'T00:00:00');
+    return dt.getDate()+'/'+(dt.getMonth()+1);
+  });
+  const header=['Student','Roll',...dayHeaders,'Present','Absent','Late','Attendance %'];
+
+  // Build data rows
+  const rows=sts.map(s=>{
+    let p=0,ab=0,late=0;
+    const dayVals=monthDays.map(d=>{
+      const v=(clsAtt[d]||{})[s.id];
+      if(v==='present'){p++;return'P';}
+      else if(v==='absent'){ab++;return'A';}
+      else if(v==='late'){late++;return'L';}
+      return'—';
+    });
+    const tot=p+ab+late;
+    const rate=tot>0?Math.round(p/tot*100)+'%':'—';
+    return[CAP(s.name),s.roll,...dayVals,p,ab,late,rate];
+  });
+
+  // Create workbook
+  const wb=XLSX.utils.book_new();
+  const wsData=[header,...rows];
+  const ws=XLSX.utils.aoa_to_sheet(wsData);
+
+  // Style header row width
+  ws['!cols']=[{wch:18},{wch:6},...monthDays.map(()=>({wch:5})),{wch:8},{wch:8},{wch:6},{wch:12}];
+
+  XLSX.utils.book_append_sheet(wb,ws,`Class ${selClass} - ${months[repMonth]}`);
+  XLSX.writeFile(wb,`EduTrack_Class${selClass}_${months[repMonth]}_${repYear}.xlsx`);
+  toast('✅ Excel downloaded!');
 }
 
 // ═══════════════════════════════════════
