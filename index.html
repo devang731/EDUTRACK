@@ -999,19 +999,38 @@ function renderTAtt(){
   const wds=getWeekDates();
   const dstrip=wds.map(d=>{
     const ds=FMT(d);const fd=fmtS(d);const isT=ds===TODAY();const isHol=isHoliday(ds);
-    return`<div class="dchip ${ds===selDate?'on':''} ${isHol?'hol':''}" onclick="selDate='${ds}';renderTAtt()" style="${isHol&&ds!==selDate?'border-color:var(--purple);background:var(--purple-p);':''}">
-      <div class="dn" style="${isHol&&ds!==selDate?'color:var(--purple);':''}">${fd.n}</div>
-      <div class="dw" style="${isHol&&ds!==selDate?'color:var(--purple);':''}">${isHol?'🏖️':fd.wd+(isT?' ●':'')}</div>
+    const isPast=ds<TODAY();const isFuture=ds>TODAY();
+    const clickable=isT&&!isHol; // only TODAY is clickable
+    return`<div class="dchip ${ds===selDate?'on':''}" 
+      onclick="${clickable?`selDate='${ds}';renderTAtt()`:'void(0)'}"
+      style="${isPast?'opacity:0.45;cursor:not-allowed;':isFuture?'opacity:0.45;cursor:not-allowed;':isHol?'border-color:var(--purple);background:var(--purple-p);cursor:not-allowed;':'cursor:pointer;'}">
+      <div class="dn" style="${isHol?'color:var(--purple);':''}${isPast?'color:var(--muted);':''}">${fd.n}</div>
+      <div class="dw" style="${isHol?'color:var(--purple);':''}${isPast?'color:var(--muted);':''}">${isHol?'🏖️':fd.wd+(isT?' ●':'')}</div>
+      ${isPast?`<div style="font-size:.5rem;color:var(--muted);">locked</div>`:''}
     </div>`;
   }).join('');
   const dayAtt=(allAttendance[selClass]||{})[selDate]||{};
   const selIsHoliday=isHoliday(selDate);
+  const selIsPast=selDate<TODAY();
   const rows=selIsHoliday
     ?`<div style="text-align:center;padding:24px;background:var(--purple-p);border-radius:10px;">
         <div style="font-size:2rem;margin-bottom:8px;">🏖️</div>
         <div style="font-family:'Bebas Neue',sans-serif;font-size:1.1rem;letter-spacing:1.5px;color:var(--purple);">${getHolidayName(selDate)}</div>
         <div style="font-size:.76rem;color:var(--muted);margin-top:4px;">No attendance on holidays</div>
       </div>`
+    :selIsPast
+    ?`<div style="text-align:center;padding:20px;background:var(--s2);border-radius:10px;">
+        <div style="font-size:1.8rem;margin-bottom:6px;">🔒</div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:1rem;letter-spacing:1.5px;color:var(--muted);">Past Date — View Only</div>
+        <div style="font-size:.75rem;color:var(--muted);margin-top:4px;">Attendance can only be marked for today</div>
+      </div>
+      <div style="margin-top:10px;">${sts.map((s,i)=>{
+        const st=dayAtt[s.id];
+        return`<div class="crow" style="opacity:.7;">
+          <div class="av ${AVC[i%7]}">${s.name.substring(0,2).toUpperCase()}</div>
+          <div style="flex:1;"><div class="sn">${CAP(s.name)}</div><div class="sm">Roll ${s.roll}</div></div>
+          <span class="badge ${st==='present'?'bgg':st==='absent'?'bgr':st==='late'?'bga':'bgm'}">${st||'—'}</span>
+        </div>`;}).join('')}</div>`
     :sts.map((s,i)=>{
       const st=dayAtt[s.id];
       return`<div class="crow">
@@ -1030,18 +1049,19 @@ function renderTAtt(){
     ${classStrip("document.querySelectorAll('#ta .clasbtn').forEach(b=>b.classList.remove('on'));this.classList.add('on');renderTAtt();")}
     <div class="dstrip">${dstrip}</div>
     <div class="card">${rows}</div>
-    ${selIsHoliday?'':`<div class="sstrip">
+    ${selIsHoliday||selIsPast?'':`<div class="sstrip">
       <div class="ssi">Class <strong>${selClass}</strong> · <strong>${Object.keys(dayAtt).length}</strong>/${sts.length} marked</div>
       <button class="btn ba bsm" onclick="saveAtt()">✓ Save Register</button>
     </div>`}`;
 }
 
 function markAtt(sid,status){
+  if(selDate!==TODAY()){toast('⚠️ Can only mark attendance for today');return;}
   if(!allAttendance[selClass])allAttendance[selClass]={};
   if(!allAttendance[selClass][selDate])allAttendance[selClass][selDate]={};
   if(allAttendance[selClass][selDate][sid]===status)delete allAttendance[selClass][selDate][sid];
   else allAttendance[selClass][selDate][sid]=status;
-  lsSet('allAttendance',allAttendance); // save locally immediately
+  lsSet('allAttendance',allAttendance);
   renderTAtt();
 }
 
