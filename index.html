@@ -1975,7 +1975,19 @@ function dlTemplate(type){
     ['Friday','13:00','Biology','Mr. Rahul'],
     ['Friday','14:00','Physics','Mr. Abdul'],
   ]);}
-  else{ws=XLSX.utils.aoa_to_sheet([['Name','Roll','Father','Phone'],['Devang','1','Mr. Dinesh Sharma','8849047514'],['Pankaj','2','Mr. Surender Kumar','9416117826']]);}
+  else{
+    // Export actual students from selected class, not just sample data
+    const sts=allStudents[selClass]||[];
+    const rows=[['Name','Roll','Father','Phone']];
+    if(sts.length){
+      sts.forEach(s=>rows.push([s.name||'',s.roll||'',s.father||'',s.phone||'']));
+    } else {
+      // If no students yet, show sample rows
+      rows.push(['Student Name','1','Father Name','9876543210']);
+      rows.push(['Student Name','2','Father Name','9876543211']);
+    }
+    ws=XLSX.utils.aoa_to_sheet(rows);
+  }
   const sheetName=type==='teachers'?'Teachers':type==='timetable'?'Timetable':'Students';
   XLSX.utils.book_append_sheet(wb,ws,sheetName);
   XLSX.writeFile(wb,'edutrack_'+type+'_template.xlsx');
