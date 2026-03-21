@@ -521,6 +521,33 @@ textarea.fi{resize:vertical;min-height:68px;}
   </div>
 </div>
 
+<!-- DAY DETAIL POPUP -->
+<div class="overlay" id="day-detail-pop">
+  <div class="popup" style="max-height:85vh;overflow-y:auto;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <div class="popup-title" id="day-detail-title" style="margin-bottom:0;">Day Details</div>
+      <span style="cursor:pointer;color:var(--muted);font-size:1.1rem;" onclick="closePopup('day-detail-pop')">✕</span>
+    </div>
+    <div id="day-detail-content"></div>
+  </div>
+</div>
+
+<!-- TODO POPUP -->
+<div class="overlay" id="todo-pop">
+  <div class="popup">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <div class="popup-title" style="margin-bottom:0;">📝 To-Do List</div>
+      <span style="cursor:pointer;color:var(--muted);font-size:1.1rem;" onclick="closePopup('todo-pop')">✕</span>
+    </div>
+    <div id="todo-date-label" style="font-size:.75rem;color:var(--muted);margin-bottom:12px;"></div>
+    <div id="todo-list" style="margin-bottom:12px;max-height:200px;overflow-y:auto;"></div>
+    <div style="display:flex;gap:8px;">
+      <input class="fi" id="todo-input" placeholder="Add a task..." onkeydown="if(event.key==='Enter')addTodo()" style="flex:1;">
+      <button class="btn ba" onclick="addTodo()">Add</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -580,6 +607,7 @@ let nextSID=load('nextSID',8);
 let nextHWID=load('nextHWID',1);
 let nextNID=load('nextNID',1);
 let nextEID=load('nextEID',1);
+let todos=load('todos',{}); // {date: [{id,text,done,by}]}
 
 // Session
 const FMT=d=>d.toISOString().split('T')[0];
@@ -623,6 +651,7 @@ async function pushCloud(){
     notices:JSON.stringify(notices),
     events:JSON.stringify(events),
     timetable:JSON.stringify(timetable),
+    todos:JSON.stringify(todos),
     next_sid:nextSID,next_hwid:nextHWID,next_nid:nextNID,next_eid:nextEID
   };
   try{
@@ -703,6 +732,7 @@ async function pullCloud(){
       lsSet('events',events);
     }catch{}}
     if(d.timetable){try{timetable=JSON.parse(d.timetable);lsSet('timetable',timetable);}catch{}}
+    if(d.todos){try{todos=JSON.parse(d.todos)||{};lsSet('todos',todos);}catch{}}
     if(d.next_sid)nextSID=d.next_sid;
     if(d.next_hwid)nextHWID=d.next_hwid;
     if(d.next_nid)nextNID=d.next_nid;
@@ -1174,6 +1204,113 @@ function calItems(){
 
 let calYear=new Date().getFullYear(),calMonth=new Date().getMonth();
 
+function getDayAttColor(ds, canEdit){
+  // Returns color based on attendance for that day (teacher view uses selClass)
+  const cls = canEdit ? selClass : (typeof uid==='object'?uid.cls:'12');
+  const dayAtt = (allAttendance[cls]||{})[ds]||{};
+  const sts = canEdit ? getStudents() : (allStudents[cls]||[]);
+  if(!sts.length) return null;
+  const holiday = events.find(e=>e.date===ds&&e.cat==='holiday');
+  if(holiday) return 'var(--purple-p)';
+  const marked = Object.keys(dayAtt).length;
+  if(!marked) return null;
+  const absent = Object.values(dayAtt).filter(v=>v==='absent').length;
+  const rate = Math.round((marked-absent)/marked*100);
+  if(rate>=90) return 'var(--accent-p)';
+  if(rate>=70) return 'var(--amber-p)';
+  return 'var(--red-p)';
+}
+
+function showDayDetail(ds, canEdit){
+  const dt=new Date(ds+'T00:00:00');
+  const dayNames=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  document.getElementById('day-detail-title').textContent=dayNames[dt.getDay()]+', '+fmtNice(ds);
+
+  const cls=canEdit?selClass:(typeof uid==='object'?uid.cls:'12');
+  const dayAtt=(allAttendance[cls]||{})[ds]||{};
+  const sts=canEdit?getStudents():(allStudents[cls]||[]);
+  const dayEvents=calItems().filter(it=>it.date===ds);
+  const dayTodos=(todos[ds]||[]);
+
+  let html='';
+
+  // Events section
+  if(dayEvents.length){
+    html+=`<div style="font-weight:700;font-size:.82rem;margin-bottom:8px;">📅 Events</div>`;
+    dayEvents.forEach(it=>{
+      html+=`<div style="background:var(--s2);border-radius:8px;padding:8px 10px;margin-bottom:6px;border-left:3px solid ${catBorder(it.cat)};">
+        <span class="badge ${catColor(it.cat)}" style="margin-right:6px;">${it.cat}</span>
+        <span style="font-size:.82rem;font-weight:600;">${it.title}</span>
+      </div>`;
+    });
+  }
+
+  // Attendance section
+  if(sts.length&&Object.keys(dayAtt).length){
+    const absent=sts.filter(s=>dayAtt[s.id]==='absent');
+    const present=sts.filter(s=>dayAtt[s.id]==='present');
+    const late=sts.filter(s=>dayAtt[s.id]==='late');
+    html+=`<div style="font-weight:700;font-size:.82rem;margin:10px 0 8px;">📋 Attendance (Class ${cls})</div>`;
+    html+=`<div style="display:flex;gap:8px;margin-bottom:8px;">
+      <span class="badge bgg">✅ ${present.length} Present</span>
+      <span class="badge bgr">❌ ${absent.length} Absent</span>
+      <span class="badge bga">⏰ ${late.length} Late</span>
+    </div>`;
+    if(absent.length){
+      html+=`<div style="font-size:.78rem;color:var(--red);font-weight:600;margin-bottom:4px;">Absent:</div>`;
+      html+=`<div style="font-size:.78rem;color:var(--muted);">${absent.map(s=>CAP(s.name)).join(', ')}</div>`;
+    }
+  } else if(sts.length){
+    html+=`<div class="alert alb" style="margin-top:8px;">ℹ️ No attendance marked for this day</div>`;
+  }
+
+  // Todo section
+  html+=`<div style="font-weight:700;font-size:.82rem;margin:12px 0 8px;">📝 To-Do</div>`;
+  if(dayTodos.length){
+    html+=dayTodos.map((t,i)=>`
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
+        <input type="checkbox" ${t.done?'checked':''} onchange="toggleTodo('${ds}',${i})" style="width:16px;height:16px;cursor:pointer;">
+        <span style="flex:1;font-size:.82rem;${t.done?'text-decoration:line-through;color:var(--muted);':''}"">${t.text}</span>
+        ${canEdit?`<button onclick="deleteTodo('${ds}',${i})" style="background:none;border:none;cursor:pointer;color:var(--red);font-size:.8rem;">✕</button>`:''}
+      </div>`).join('');
+  } else {
+    html+=`<div style="font-size:.78rem;color:var(--muted);">No tasks for this day</div>`;
+  }
+  if(canEdit||role==='student'){
+    html+=`<div style="display:flex;gap:8px;margin-top:10px;">
+      <input class="fi" id="inline-todo-input" placeholder="Add task for this day..." style="flex:1;font-size:.8rem;" onkeydown="if(event.key==='Enter')addInlineTodo('${ds}',${canEdit})">
+      <button class="btn ba bsm" onclick="addInlineTodo('${ds}',${canEdit})">Add</button>
+    </div>`;
+  }
+
+  document.getElementById('day-detail-content').innerHTML=html;
+  showPopup('day-detail-pop');
+}
+
+function addInlineTodo(ds, rerender){
+  const inp=document.getElementById('inline-todo-input');
+  const text=inp?inp.value.trim():'';
+  if(!text)return;
+  if(!todos[ds])todos[ds]=[];
+  const by=role==='teacher'?(TEACHERS.find(t=>t.id===uid)||{name:'Teacher'}).name:'Student';
+  todos[ds].push({id:Date.now(),text,done:false,by});
+  lsSet('todos',todos);schedulePush();
+  inp.value='';
+  showDayDetail(ds, rerender);
+}
+
+function toggleTodo(ds,idx){
+  if(todos[ds]&&todos[ds][idx]){
+    todos[ds][idx].done=!todos[ds][idx].done;
+    lsSet('todos',todos);schedulePush();
+  }
+}
+
+function deleteTodo(ds,idx){
+  if(todos[ds]){todos[ds].splice(idx,1);lsSet('todos',todos);schedulePush();}
+  closePopup('day-detail-pop');
+}
+
 function renderCal(elId,canEdit){
   const el=document.getElementById(elId);
   const items=calItems();
@@ -1181,6 +1318,8 @@ function renderCal(elId,canEdit){
   const daysInMonth=new Date(calYear,calMonth+1,0).getDate();
   const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
   const todayStr=TODAY();
+
+  // Build event/item map for this month
   const dayMap={};
   items.forEach(it=>{
     const d=new Date(it.date+'T00:00:00');
@@ -1188,32 +1327,57 @@ function renderCal(elId,canEdit){
       const k=d.getDate();if(!dayMap[k])dayMap[k]=[];dayMap[k].push(it);
     }
   });
+
   const upcoming=items.filter(it=>{
     if(!it.date)return false;
     const diff=(new Date(it.date+'T00:00:00')-new Date())/(1000*60*60*24);
     return diff>=-1&&diff<=30;
   });
 
+  // Build calendar grid
   let grid='<div class="cal-grid">';
   ['M','T','W','T','F','S','S'].forEach(d=>grid+=`<div class="cal-day-hdr">${d}</div>`);
   const start=firstDay===0?6:firstDay-1;
   for(let i=0;i<start;i++)grid+=`<div></div>`;
+
   for(let d=1;d<=daysInMonth;d++){
     const ds=`${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const isT=ds===todayStr;
     const its=dayMap[d]||[];
-    const dotC=its.length?catBorder(its[0].cat):'transparent';
-    grid+=`<div class="cal-day" style="background:${isT?'var(--accent)':'var(--s2)'};cursor:${its.length?'pointer':'default'};" ${its.length?`onclick="toast('📅 '+${JSON.stringify(its.map(i=>i.title).join(', '))})"`:''}>
+    const attColor=getDayAttColor(ds,canEdit);
+    const hasTodo=(todos[ds]||[]).length>0;
+    const holiday=events.find(e=>e.date===ds&&e.cat==='holiday');
+    const hasHW=items.find(it=>it.date===ds&&it.src==='hw');
+    const hasExam=items.find(it=>it.date===ds&&it.cat==='exam');
+
+    // Background color: today=accent, holiday=purple, has att=colored, else default
+    let bg=isT?'var(--accent)':holiday?'var(--purple-p)':attColor||'var(--s2)';
+
+    grid+=`<div class="cal-day" style="background:${bg};cursor:pointer;position:relative;" onclick="showDayDetail('${ds}',${canEdit})">
       <div class="cal-day-num" style="color:${isT?'#fff':'var(--ink)'};">${d}</div>
-      <div class="cal-dot" style="background:${isT?'rgba(255,255,255,.6)':dotC};"></div>
+      <div style="display:flex;gap:2px;justify-content:center;margin-top:2px;flex-wrap:wrap;">
+        ${its.length&&!holiday?`<div style="width:5px;height:5px;border-radius:50%;background:${isT?'rgba(255,255,255,.7)':catBorder(its[0].cat)};"></div>`:''}
+        ${hasHW?`<div style="width:5px;height:5px;border-radius:50%;background:${isT?'rgba(255,255,255,.7)':'var(--blue)'};" title="HW due"></div>`:''}
+        ${hasTodo?`<div style="width:5px;height:5px;border-radius:2px;background:${isT?'rgba(255,255,255,.7)':'var(--amber)'};" title="Todo"></div>`:''}
+      </div>
     </div>`;
   }
   grid+='</div>';
 
+  // Legend
+  const legend=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;font-size:.65rem;color:var(--muted);">
+    <span>🟢 Good attendance</span>
+    <span>🟡 Some absent</span>
+    <span>🔴 Many absent</span>
+    <span>🟣 Holiday</span>
+    <span>🔵 HW due</span>
+    <span>🟠 Todo</span>
+  </div>`;
+
   const upHtml=upcoming.length?upcoming.map(it=>`
     <div class="ncard" style="border-left-color:${catBorder(it.cat)};">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-        <span class="badge ${catColor(it.cat)}">${it.src==='hw'?'Homework':it.cat}</span>
+        <span class="badge ${catColor(it.cat)}">${it.src==='hw'?'Homework':it.src==='notice'?'Notice':it.cat}</span>
         <span style="font-size:.66rem;color:var(--muted);">${fmtNice(it.date)}</span>
       </div>
       <div class="ntitle">${it.title}</div>
@@ -1222,11 +1386,12 @@ function renderCal(elId,canEdit){
 
   el.innerHTML=`
     <div class="sh">
-      <button class="btn bg bsm" onclick="calYear*12+calMonth>0&&(calMonth===0?(calYear--,calMonth=11):calMonth--);${canEdit?'renderTCal()':'renderSCal()'}">← Prev</button>
+      <button class="btn bg bsm" onclick="calMonth===0?(calYear--,calMonth=11):calMonth--;${canEdit?'renderTCal()':'renderSCal()'}">← Prev</button>
       <div style="font-family:'Bebas Neue',sans-serif;font-size:1.1rem;letter-spacing:1.5px;">${months[calMonth]} ${calYear}</div>
       <button class="btn bg bsm" onclick="calMonth===11?(calYear++,calMonth=0):calMonth++;${canEdit?'renderTCal()':'renderSCal()'}">Next →</button>
     </div>
-    <div class="card" style="padding:12px;">${grid}</div>
+    ${legend}
+    <div class="card" style="padding:12px;margin-bottom:14px;">${grid}</div>
     <div class="sh"><div class="st">Upcoming (30 days)</div>${canEdit?`<button class="btn ba bsm" onclick="document.getElementById('ev-date').value='${TODAY()}';showPopup('m-event')">+ Add Event</button>`:''}</div>
     ${upHtml}`;
 }
@@ -1812,6 +1977,7 @@ window.addEventListener('beforeunload',()=>{
       notices:JSON.stringify(notices),
       events:JSON.stringify(events),
       timetable:JSON.stringify(timetable),
+    todos:JSON.stringify(todos),
       students:JSON.stringify(allStudents),
       teachers:JSON.stringify(TEACHERS),
       next_sid:nextSID,next_hwid:nextHWID,next_nid:nextNID,next_eid:nextEID
