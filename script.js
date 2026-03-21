@@ -2,17 +2,20 @@
 const SB_URL = "https://iexrhkrsonhdnloznjru.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlleHJoa3Jzb25oZG5sb3puanJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0ODkzNTksImV4cCI6MjA4OTA2NTM1OX0.v4XIg2jH1irE4XzDGnYLmVAR1VMhC0ScxcPtlCNQZ9s";
 
-// 2. GLOBAL FUNCTIONS (These must be outside any {} to work with buttons)
+// 2. GLOBAL FUNCTIONS (Attached to 'window' so HTML buttons can see them)
 window.showTeacherLogin = function() {
-    console.log("Opening Teacher Login...");
-    const pop = document.getElementById('teacher-pop');
-    if(pop) pop.style.display = 'flex';
+    const el = document.getElementById('teacher-pop');
+    if (el) el.style.display = 'flex';
 };
 
 window.showStudentLogin = function() {
-    console.log("Opening Student Login...");
-    const pop = document.getElementById('student-pop');
-    if(pop) pop.style.display = 'flex';
+    const el = document.getElementById('student-pop');
+    if (el) el.style.display = 'flex';
+};
+
+window.showAdminLogin = function() {
+    const el = document.getElementById('admin-pop');
+    if (el) el.style.display = 'flex';
 };
 
 window.closePop = function() {
@@ -20,14 +23,13 @@ window.closePop = function() {
 };
 
 window.switchTo = function(id) {
-    console.log("Switching to screen: " + id);
     document.querySelectorAll('.screen').forEach(s => {
         s.style.display = 'none';
         s.classList.remove('active');
     });
     const target = document.getElementById(id);
     if (target) {
-        target.style.display = 'block';
+        target.style.display = 'flex'; // Use flex to match your CSS layout
         target.classList.add('active');
     }
 };
@@ -48,7 +50,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// 4. DATABASE SYNC
+// 4. ATTENDANCE LOGIC
 async function markAttendance(studentId, status) {
     try {
         await fetch(`${SB_URL}/rest/v1/appdata?key=eq.edutrack`, {
@@ -62,5 +64,5 @@ async function markAttendance(studentId, status) {
                 attendance: `ID: ${studentId} - ${status} (${new Date().toLocaleTimeString()})`
             })
         });
-    } catch (e) { console.error("Database Sync Error", e); }
+    } catch (e) { console.error("Sync Error", e); }
 }
